@@ -1,29 +1,45 @@
-#include <RH_ASK.h>
+// #include <RH_ASK.h>
+// #include <SPI.h>
 
 // (Speed, Receive, Transmit (not used), PTT, PTT inverted)
-RH_ASK rf_driver(2000, 12, 0, 0, false); 
+// RH_ASK rf_driver(2000, 12, 0, 0, false); 
+
+const int rssiPin = A0; // analog pin
+int rssiValue = 0;
+int smoothedRssi = 0;
+const int window = 20;
+int measurements[20];
+int measurementIndex = 0;
+
+//unsigned long lastCountTime = 0;
+//const int countInterval = 1000; // packet count per second
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    checking hardware is active
-    if (!rf_driver.init()) {
-        Serial.println("Receiver Init Failed!");
-    }
-    else {
-        Serial.println("Init success!");
+    for (int i = 0; i < window; i++){
+      measurements[i] = 0;
     }
 }
 
 void loop() {
-    uint8_t buf[RH_ASK_MAX_MESSAGE_LEN]; // max array to ensure maximize length of messages (67 bytes)
-    uint8_t buflen = sizeof(buf); // total memory capacity to be used
+    rssiValue = analogRead(rssiPin); // takes reading
 
-    if (rf_driver.recv(buf, &buflen)) { // checks if valid message is received and updates buflen
-        buf[buflen] = '\0'; // Manually add a "Null Terminator" so microcontroller knows where the text ends
-        Serial.print("Message Received: ");
-        Serial.println((char*)buf);
+    // Takes average reading over time period to smooth out receiver measurements
+    measurements[measurementIndex] = rssiValue;
+    measurementIndex = (measurementIndex + 1) % window;
+
+    int sum = 0;
+    for (int i = 0; i < window; i++){
+      sum += measurements[i];
     }
+    smoothedRssi = sum / window;
+
+    Serial.print("RSSI: ");
+    Serial.println(smoothedRssi);
+
+    delay (50);
+
 }
 
