@@ -13,7 +13,7 @@ void setup() {
     radio.begin();
     radio.setAutoAck(false); // ignores protocal to receive acknowledgement of message sent to receiver
     radio.openWritingPipe(address);
-    radio.setPALevel(RF24_PA_MIN); // min power for close range testing
+    radio.setPALevel(RF24_PA_MIN); // min (or low) power for close range testing
     // radio.setDataRate(RF24_250KBPS); // slower rate, can be more reliable for NRF24L01 PA+LNA
     radio.stopListening(); // set as transmitter
 
@@ -23,13 +23,14 @@ void setup() {
 void loop() {
     const char text[] = "ping";
     bool success = radio.write(&text, sizeof(text));
+    // or just bool success  = radio.write ("ping", 4);
 
-    if(success){
+    if (success) {
         Serial.println("Sent:ping");
     }
-    else{
+    else {
         Serial.println("Send failed");
     }
 
-    delay(100); // 10 pings per second
+    delay(10); // 100 pings per second
 }
