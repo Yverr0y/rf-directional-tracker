@@ -1,28 +1,35 @@
-#include <RH_ASK.h>
 #include <SPI.h>
+#include <RF24.h>
 
-// (Speed, Receive (not used), Transmit, PTT, PTT inverted)
-RH_ASK rf_driver(2000, 0, 2, 0, false);
+// CE pin 9, CSN pin 10
+RF24 radio(9, 10);
 
-const char *message = "ping";
+const byte address[6] = "00001";
 
 void setup() {
     Serial.begin(115200);
     delay(1000); 
-    
-    //ensures hardware is active
-    if (!rf_driver.init()) {
-        Serial.println("Init failed!");
-    } 
-    else {
-        Serial.println("Init success!");
-    }
+
+    radio.begin();
+    radio.setAutoAck(false); // ignores protocal to receive acknowledgement of message sent to receiver
+    radio.openWritingPipe(address);
+    radio.setPALevel(RF24_PA_MIN); // min power for close range testing
+    // radio.setDataRate(RF24_250KBPS); // slower rate, can be more reliable for NRF24L01 PA+LNA
+    radio.stopListening(); // set as transmitter
+
+    Serial.println("Transmitter ready");
 }
 
 void loop() {
-    rf_driver.send((uint8_t *)message, strlen(message)); // (data_pointer, data_length)
+    const char text[] = "ping";
+    bool success = radio.write(&text, sizeof(text));
 
-    rf_driver.waitPacketSent(); //wait for RF
-    // Serial.println("Sent");
-    delay(50); // sends 20 pings per second max (~1/4 is possible maxed received)
+    if(success){
+        Serial.println("Sent:ping");
+    }
+    else{
+        Serial.println("Send failed");
+    }
+
+    delay(100); // 10 pings per second
 }
