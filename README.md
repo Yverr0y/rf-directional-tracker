@@ -24,7 +24,7 @@ Stage 1: 1 receiver and 1 transmitter with servo action changing based on proxim
 
 Stage 2: 2 receivers and 1 transmitter. For the two receiving modules, each transceiver receives, then transmits the data to the third processor where the RSSI transmit data is used to determine approximate direction of incoming transmit signal via servo moving to point in transmit direction
 
-Stage 3: 3 receivers to account for short coming of using only 2 receivers where there is 180 degree ambiguity in direction signal is transmitted from.
+Stage 3: 3 receivers to account for short coming of using only 2 receivers where there is 180 degree ambiguity in direction signal is transmitted from. (3rd receiver will be attached to Brain Nano doing the directional computation. While it is cleaner and simpler to have a separate Nano and receiver I've opted to place two NRF24L01 transceivers on the Brain Nano)
 
 Unnecessary to proceed beyond three receivers to account for the "cone of confusion" ambiguity in 3D space as per the motivation, it wouldn't be expect to have to account for signals other than those mostly on the ground plane.
 

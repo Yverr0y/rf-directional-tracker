@@ -3,8 +3,8 @@
 
 RF24 radio(9, 10);
 
-const byte myAddress[6] = "NODE1";
-const byte brainAddress[6] = "BRAIN1"; // send to 
+const byte myAddress[6] = "NODE2";
+const byte brainAddress[6] = "BRAIN2"; // send to 
 const byte transmitAddress[6] = "00001"; // listen to receive
 
 // packet counting variables
@@ -22,13 +22,12 @@ int measurements[5];
 int measurementIndex = 0;
 
 // Timing Offset to distinguish NODE1 and NODE2
-const int startOffset = 0;
-// bool offsetDone = false;
+const int startOffset = 25;
 bool reported = false;
 
 void setup() {
   Serial.begin(115200);
-    delay(1000 + startOffset); // stagger startup (can delete for node1)
+    delay(1000 + startOffset); // stagger startup
 
    for (int i = 0; i < window; i++){
       measurements[i] = 0; 
@@ -47,17 +46,21 @@ void setup() {
 }
 
 void loop() {
-    
-    // listen phase
-    if (millis() - listenBegin < listenWindow) {
-      if (radio.available()) {
-        char text[32] = "";
-        radio.read(&text, sizeof(text));
-        packetCount++;
-      }
+  // Handle startup offset for NODE2 to avoid collision
+  // if (!offsetDone) {
+  //  delay(startOffset);
+  //  offsetDone = true;
+  //  listenBegin = millis();
+  //}
+
+  if (millis() - listenBegin < listenWindow) {
+    if (radio.available()) {
+      char text[32] = "";
+      radio.read(&text, sizeof(text));
+      packetCount++;
+    }
   }
 
-  // transmit phase
   else if (millis() - listenBegin < listenWindow + transmitWindow) {
 
     // Only transmit once per cycle
