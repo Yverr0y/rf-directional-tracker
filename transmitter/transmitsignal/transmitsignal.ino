@@ -11,6 +11,7 @@ void setup() {
     delay(1000); 
 
     radio.begin();
+    radio.setChannel(100);
     radio.setAutoAck(false); // ignores protocal to receive acknowledgement of message sent to receiver
     radio.openWritingPipe(address);
     radio.setPALevel(RF24_PA_MIN); // min (or low) power for close range testing

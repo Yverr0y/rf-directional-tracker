@@ -3,114 +3,128 @@
 
 RF24 radio(9, 10);
 
-const byte myAddress[6] = "NODE1";
-const byte brainAddress[6] = "BRAIN1"; // send to 
-const byte transmitAddress[6] = "00001"; // listen to receive
+const byte transmitterAddress[6] = "00001";
+const byte pollAddress[6] =        "POLL1";
+const byte reportAddress[6] =      "RPRT1";
+const int myNodeNum = 1;
 
-// packet counting variables
 int packetCount = 0;
-unsigned long listenBegin = 0;
-// const int windowSize = 500; // count pings per 500ms
-const int listenWindow = 450; // listening for signals for 450ms
-const int transmitWindow = 50; // transmit to BRAIN over 50ms window
-
-// smoothing variables
-// int rssiValue = 0;
 int smoothedStrength = 0;
-const int window = 5;
-int measurements[5];
-int measurementIndex = 0;
 
-// Timing Offset to distinguish NODE1 and NODE2
-const int startOffset = 0;
-// bool offsetDone = false;
-bool reported = false;
+const int smoothingWindow = 5;
+int readings[5];
+int readingIndex = 0;
+
+const int COUNT_DURATION = 1000; // count for 1 second
+
+struct RSSIReport {
+  int nodeNum;
+  int rssi;
+};
 
 void setup() {
   Serial.begin(115200);
-    delay(1000 + startOffset); // stagger startup (can delete for node1)
+  delay(1000);
 
-   for (int i = 0; i < window; i++){
-      measurements[i] = 0; 
-   }
+  if (!radio.begin()) {
+    Serial.println("Radio not detected");
+    while(1);
+  }
 
-   radio.begin();
-   radio.openReadingPipe(1, transmitAddress);
-   radio.setAutoAck(false);
-   radio.setPALevel(RF24_PA_MIN);
-   // radio.setDataRate(RF24_250KBPS);
-   radio.startListening(); // set as receiver
+  radio.setPALevel(RF24_PA_MIN);
+  radio.setAutoAck(false);
+  radio.setChannel(76);
+  // radio.setDataRate(RF24_250KBPS);
 
-   listenBegin = millis();
-   Serial.println("Receiver Node Ready");
+  for (int i = 0; i < smoothingWindow; i++) {
+    readings[i] = 0;
+  }
 
+  // Start counting transmitter packets
+ // radio.openReadingPipe(1, transmitterAddress);
+ // radio.startListening();
+
+  Serial.print("NODE");
+  Serial.print(myNodeNum);
+  Serial.println(" ready");
 }
 
 void loop() {
-    
-    // listen phase
-    if (millis() - listenBegin < listenWindow) {
-      if (radio.available()) {
-        char text[32] = "";
-        radio.read(&text, sizeof(text));
-        packetCount++;
-      }
-  }
+  // PHASE 1 - Count transmitter packets for 1 second
 
-  // transmit phase
-  else if (millis() - listenBegin < listenWindow + transmitWindow) {
+  // When counting transmitter packets
+  radio.setChannel(100);
+  radio.openReadingPipe(1, transmitterAddress);
+  radio.startListening();
+  delay(20);
 
-    // Only transmit once per cycle
-    if (!reported) {
-      // Takes average reading over time period to smooth out receiver measurements
-      measurements[measurementIndex] = packetCount;
-      measurementIndex = (measurementIndex + 1) % window;
+  Serial.println("Counting...");
+  unsigned long countStart = millis();
+  packetCount = 0;
 
-      int sum = 0;
-      for (int i = 0; i < window; i++){
-        sum += measurements[i];
-      }
-      smoothedStrength = sum / window;
-
-      // Switch to transmit mode
-      radio.stopListening();
-      radio.openWritingPipe(brainAddress);
-
-      // Send node ID and RSSI value as a struct
-      struct RSSIReport {
-        char nodeID[6];
-        int rssi;
-      };
-
-      RSSIReport report;
-      strcpy(report.nodeID, myAddress);
-      report.rssi = smoothedStrength;
-
-      bool success = radio.write(&report, sizeof(report));
-
-      if (success) {
-       // Serial.print(myAddress);
-        Serial.print("Reported RSSI: ");
-        Serial.println(smoothedStrength);
-      } 
-      else {
-        Serial.println("Report failed");
-      }
-
-      // Switch back to listen mode
-      radio.openReadingPipe(1, transmitAddress);
-      radio.startListening();
-      radio.flush_rx(); // clear any garbage data in receive accumulated during transmit phase
-
-      reported = true;
-      packetCount = 0;
+  while (millis() - countStart < COUNT_DURATION) {
+    if (radio.available()) {
+      char text[32] = "";
+      radio.read(&text, sizeof(text));
+      packetCount++;
     }
   }
 
-  // Reset for next window
-  else {
-    listenBegin = millis();
-    reported = false;
+  // Calculate smoothed RSSI
+  readings[readingIndex] = packetCount;
+  readingIndex = (readingIndex + 1) % smoothingWindow;
+
+  int sum = 0;
+  for (int i = 0; i < smoothingWindow; i++) {
+    sum += readings[i];
+  }
+  smoothedStrength = sum / smoothingWindow;
+
+  Serial.print("Count done - RSSI: ");
+  Serial.println(smoothedStrength);
+
+  // PHASE 2 - Switch to poll address and wait indefinitely
+  radio.stopListening();
+  radio.openReadingPipe(1, pollAddress);
+  radio.startListening();
+
+  Serial.println("Waiting for brain poll...");
+
+  // When waiting for poll
+  radio.setChannel(76);
+  radio.openReadingPipe(1, pollAddress);
+  radio.startListening();
+  delay(20);
+
+  // Wait forever until brain polls
+  while (true) {
+    if (radio.available()) {
+      char request[32] = "";
+      radio.read(&request, sizeof(request));
+
+      Serial.println("Poll received - responding");
+
+      // In node handlePoll - before responding
+      delay(50); // 1ms settling time before transmitting response
+
+      radio.stopListening();
+      radio.openWritingPipe(reportAddress);
+
+      RSSIReport report;
+      report.nodeNum = myNodeNum;
+      report.rssi = smoothedStrength;
+      radio.write(&report, sizeof(report));
+
+      Serial.print("Reported RSSI: ");
+      Serial.println(smoothedStrength);
+
+      // Break out and start counting again
+      break;
+    }
   }
 
+  // Return to counting transmitter packets
+  radio.stopListening();
+  radio.openReadingPipe(1, transmitterAddress);
+  radio.startListening();
 }
