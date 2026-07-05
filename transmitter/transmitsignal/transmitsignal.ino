@@ -32,5 +32,5 @@ void loop() {
         Serial.println("Send failed");
     }
 
-    delay(10); // 100 pings per second
+    // delay(10); // 100 pings per second
 }
