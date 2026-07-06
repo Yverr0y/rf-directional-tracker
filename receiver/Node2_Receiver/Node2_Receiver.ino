@@ -11,11 +11,11 @@ const int myNodeNum = 2;
 int packetCount = 0;
 int smoothedStrength = 0;
 
-const int smoothingWindow = 5;
-int readings[5];
+const int smoothingWindow = 10;
+int readings[10];
 int readingIndex = 0;
 
-const int COUNT_DURATION = 1000; // count for 1 second
+const int COUNT_DURATION = 2000; // count for 2 second to increase packet count
 
 struct RSSIReport {
   int nodeNum;
@@ -35,6 +35,7 @@ void setup() {
   radio.setAutoAck(false);
   radio.setChannel(76);
   // radio.setDataRate(RF24_250KBPS);
+  // radio.setDataRate(RF24_2MBPS); // highest data rate = worst sensitivity = more differentiation at close range
 
   for (int i = 0; i < smoothingWindow; i++) {
     readings[i] = 0;

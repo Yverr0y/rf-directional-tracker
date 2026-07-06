@@ -18,11 +18,11 @@ CMD-detonated/RF-triggered IEDs use RF signals to function. UASs are becoming co
 
 ## Status
 
-Active Development, currently establishing baseline RSSI reading and servo control.
+Active Development, 2 receivers send reliable packets to Brain Node and manipulates servo.
 
 Stage 1: 1 receiver and 1 transmitter with servo action changing based on proximity of transmit. At close range the servo doesn't spin, at a medium range it spins slowly, and at a far transmit range it spins faster.
 
-Stage 2: 2 receivers and 1 transmitter. For the two receiving modules, each transceiver receives, then transmits the data to the third processor where the RSSI transmit data is used to determine approximate direction of incoming transmit signal via servo moving to point in transmit direction
+Stage 2: 2 receivers and 1 transmitter. For the two receiving modules, each transceiver receives, then transmits the data to the third processor where the RSSI transmit data is used to determine approximate direction of incoming transmit signal via servo moving to point in transmit direction. (Known issue using only one transceiver per Node is the transmission window of the Node to the Brain creates a gap where the Node isn't listening for the transmitter reducing RSSI values per cycle; solution use two transceivers per Node).
 
 Stage 3: 3 receivers to account for short coming of using only 2 receivers where there is 180 degree ambiguity in direction signal is transmitted from. (3rd receiver will be attached to Brain Nano doing the directional computation. While it is cleaner and simpler to have a separate Nano and receiver I've opted to place two NRF24L01 transceivers on the Brain Nano)
 
