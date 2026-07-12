@@ -1,21 +1,24 @@
 #include <SPI.h>
 #include <RF24.h>
-#include <Servo.h>
+#include <Stepper.h>
 
-RF24 radio(9, 10);
-Servo trackingServo;
+RF24 radio(4, 5);
 
 const byte pollNode1[6] = "POLL1";
 const byte pollNode2[6] = "POLL2";
-const byte reprt1[6] =    "RPRT1";
-const byte reprt2[6] =    "RPRT2";
+const byte pollNode3[6] = "POLL3";
+const byte reprt1[6] = "RPRT1";
+const byte reprt2[6] = "RPRT2";
+const byte reprt3[6] = "RPRT3";
 
 int rssi1 = 0;
 int rssi2 = 0;
+int rssi3 = 0;
 
-const int SERVO_PIN = 6;
-int currentAngle = 90;
-const int angleThreshold = 3; // servo only moves 3+ degrees at a time
+const int STEPS_PER_REV = 2048; //360 degree roation
+Stepper stepper(STEPS_PER_REV, 13, 14, 12, 25); // (IN1, IN3, IN2, IN4)
+int currentStepperAngle = 0; // degrees, 0-359
+const int angleThreshold = 3; // chnage in angle must exceed to move stepper
 
 struct RSSIReport {
   int nodeNum;
@@ -49,7 +52,6 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
     radio.openReadingPipe(1, reportAddress);
     radio.startListening();
 
-    // Give radio time to settle into listen mode
     delay(50);
 
     // Wait briefly for response
@@ -83,38 +85,73 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
   return -1;
 }
 
-void updateServo(int r1, int r2) {
-  if ((r1 + r2) > 0) {
+// Calculate target angle from three RSSI values
+int calculateAngle(int r1, int r2, int r3) {
+  // Square values to amplify differential
+  long r1sq = (long)r1 * r1;
+  long r2sq = (long)r2 * r2;
+  long r3sq = (long)r3 * r3;
+  long total = r1sq + r2sq + r3sq;
 
-    // Square values to amplify differential
-    long r1sq = (long)r1 * r1;
-    long r2sq = (long)r2 * r2;
-    
-    // Calculate proportion: 0.0 = all NODE1, 1.0 = all NODE2
-    float proportion = (float)r2sq / (float)(r1sq + r2sq);
-    
-    // Map to full servo range
-    int targetAngle = (int)(proportion * 180);
-    targetAngle = constrain(targetAngle, 0, 180);
+  if (total == 0) return currentStepperAngle;
 
-    // moves servo if only by 3+ degrees to reduce movements from small RSSI fluctuations
-    if (abs(targetAngle - currentAngle) > angleThreshold) {
-      trackingServo.write(targetAngle*0.667); // reduce 270 degree servo to 180 degree travel
-      currentAngle = targetAngle;
-      Serial.print("NODE1: "); Serial.print(r1);
-      Serial.print(" | NODE2: "); Serial.print(r2);
-      Serial.print(" | Proportion: "); Serial.print(proportion);
-      Serial.print(" | Angle: "); Serial.println(targetAngle);
+  // Node positions in equilateral triangle
+  // NODE1 at 0 degrees, NODE2 at 120 degrees, NODE3 at 240 degrees
+  float x = 0;
+  float y = 0;
 
-    }
-    else {
-      Serial.print("NODE1: "); Serial.print(r1);
-      Serial.print(" | NODE2: "); Serial.print(r2);
-      Serial.print(" | Proportion unchanged: "); Serial.print(proportion);
-      Serial.print(" | Angle unchanged: "); Serial.println(currentAngle);
-  
-    }
+  x += (float)r1sq * cos(0 * PI / 180.0);
+  x += (float)r2sq * cos(120 * PI / 180.0);
+  x += (float)r3sq * cos(240 * PI / 180.0);
+
+  y += (float)r1sq * sin(0 * PI / 180.0);
+  y += (float)r2sq * sin(120 * PI / 180.0);
+  y += (float)r3sq * sin(240 * PI / 180.0);
+
+  // atan2 gives angle in radians -PI to PI
+  float angleRad = atan2(y, x);
+
+  // Convert to degrees 0-359
+  int angleDeg = (int)(angleRad * 180.0 / PI);
+  if (angleDeg < 0) angleDeg += 360;
+
+  return angleDeg;
+}
+
+// Move stepper to target angle
+void moveToAngle(int targetAngle) {
+  // Calculate shortest path to target
+  int diff = targetAngle - currentStepperAngle;
+
+  // Normalize to -180 to 180 for shortest path
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+
+  // Only move if outside deadband
+  if (abs(diff) <= angleThreshold) {
+    Serial.print("Angle Unchanged: ");
+    Serial.println(currentStepperAngle);
+    return; // break
   }
+
+  // Convert angle difference to steps
+  int steps = (int)((float)diff / 360.0 * STEPS_PER_REV);
+
+  Serial.print("Moving ");
+  Serial.print(diff);
+  Serial.print(" degrees (");
+  Serial.print(steps);
+  Serial.println(" steps)");
+
+  stepper.step(steps); // positive = clockwise, negative = counterclockwise
+
+  // Update tracked angle
+  currentStepperAngle = targetAngle;
+  if (currentStepperAngle < 0) currentStepperAngle += 360;
+  if (currentStepperAngle >= 360) currentStepperAngle -= 360;
+
+  Serial.print("Now at: ");
+  Serial.println(currentStepperAngle);
 }
 
 void setup() {
@@ -130,9 +167,6 @@ void setup() {
   radio.setAutoAck(false);
   radio.setChannel(76);
   // radio.setDataRate(RF24_250KBPS);
-
-  trackingServo.attach(SERVO_PIN);
-  trackingServo.write(90);
 
   Serial.println("Brain ready");
 }
@@ -153,19 +187,31 @@ void loop() {
   Serial.println("Polling NODE2...");
   rssi2 = pollNode(pollNode2, reprt2, 2);
 
-  // Update servo
-  if (rssi1 != -1 && rssi2 != -1) {
-    updateServo(rssi1, rssi2);
+  delay(10);
+
+  Serial.println("Polling NODE3...");
+  rssi3 = pollNode(pollNode3, reprt3, 3);
+
+  // Update stepper
+  if (rssi1 != -1 && rssi2 != -1 && rssi3 != -1) {
+    calculateAngle(rssi1, rssi2, rssi3);
   }
-  else if (rssi1 == -1 && rssi2 == -1) {
-    Serial.println("NO SIGNAL");
+  else if (rssi1 == -1 || rssi2 == -1 || rssi3 == -1) {
+    if (rssi1 == -1) Serial.println("NODE1 not responding");
+    if (rssi2 == -1) Serial.println("NODE2 not responding");
+    if (rssi3 == -1) Serial.println("NODE3 not responding");
   }
-  else if (rssi1 == -1) {
-    Serial.println("NODE1 not responding");
-  }
-  else {
-    Serial.println("NODE2 not responding");
-  }
+
+  // Calculate target angle
+  int targetAngle = calculateAngle(rssi1, rssi2, rssi3);
+
+  Serial.print("NODE1: "); Serial.print(rssi1);
+  Serial.print(" | NODE2: "); Serial.print(rssi2);
+  Serial.print(" | NODE3: "); Serial.print(rssi3);
+  Serial.print(" | Target angle: "); Serial.println(targetAngle);
+
+  // Move stepper to target
+  moveToAngle(targetAngle);
 
   // After polling both nodes they immediately start
   // their next 1 second count cycle
