@@ -18,9 +18,10 @@ int readingIndex = 0;
 const int COUNT_DURATION = 2000; // count for 2 second to increase packet count
 
 struct RSSIReport {
-  int nodeNum;
-  int rssi;
+  uint16_t nodeNum;
+  uint16_t rssi;
 };
+
 
 void setup() {
   Serial.begin(115200);
@@ -99,32 +100,31 @@ void loop() {
   // Wait forever until brain polls
   while (true) {
     if (radio.available()) {
-      char request[32] = "";
+      uint8_t request;
       radio.read(&request, sizeof(request));
 
-      Serial.println("Poll received - responding");
+      if (request == (uint8_t)myNodeNum){
 
-      // In node handlePoll - before responding
-      delay(50); // 1ms settling time before transmitting response
+        Serial.println("Poll received - responding");
 
-      radio.stopListening();
-      radio.openWritingPipe(reportAddress);
+        // In node handlePoll - before responding
+        delay(50); // 1ms settling time before transmitting response
 
-      RSSIReport report;
-      report.nodeNum = myNodeNum;
-      report.rssi = smoothedStrength;
-      radio.write(&report, sizeof(report));
+        radio.stopListening();
+        radio.openWritingPipe(reportAddress);
 
-      Serial.print("Reported RSSI: ");
-      Serial.println(smoothedStrength);
+        RSSIReport report;
+        report.nodeNum = myNodeNum;
+        report.rssi = smoothedStrength;
+        radio.write(&report, sizeof(report));
 
-      // Break out and start counting again
-      break;
+        Serial.print("Reported RSSI: ");
+        Serial.println(smoothedStrength);
+
+        // Break out and start counting again
+        break;
+      }
+        // keep waiting for correct poll 
     }
   }
-
-  // Return to counting transmitter packets
-  radio.stopListening();
-  radio.openReadingPipe(1, transmitterAddress);
-  radio.startListening();
 }

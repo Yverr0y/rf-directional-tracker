@@ -21,13 +21,13 @@ int currentStepperAngle = 0; // degrees, 0-359
 const int angleThreshold = 3; // chnage in angle must exceed to move stepper
 
 struct RSSIReport {
-  int nodeNum;
-  int rssi;
+  uint16_t nodeNum;
+  uint16_t rssi;
 };
 
 int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNode) {
   
-  // Flush any stale packets before starting to remove garbage
+  // Flush any noise before starting to remove garbage
   radio.flush_rx();
 
   // Listen for response first
@@ -38,11 +38,13 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
 
   // Keep sending poll until response received or 2 second timeout
   while (millis() - pollStart < 2000) {
-    
+
     // Send poll
     radio.stopListening();
     radio.openWritingPipe(pollAddress);
-    const char request[] = "POLL";
+    uint8_t request;
+    request = (uint8_t)expectedNode; // 1, 2, 3
+
     radio.write(&request, sizeof(request));
 
     //Give radio time to switch modes
@@ -143,6 +145,7 @@ void moveToAngle(int targetAngle) {
   Serial.print(steps);
   Serial.println(" steps)");
 
+  stepper.setSpeed(10);
   stepper.step(steps); // positive = clockwise, negative = counterclockwise
 
   // Update tracked angle
@@ -157,6 +160,8 @@ void moveToAngle(int targetAngle) {
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  stepper.setSpeed(10);
 
   if (!radio.begin()) {
     Serial.println("Radio not detected");
@@ -192,14 +197,11 @@ void loop() {
   Serial.println("Polling NODE3...");
   rssi3 = pollNode(pollNode3, reprt3, 3);
 
-  // Update stepper
-  if (rssi1 != -1 && rssi2 != -1 && rssi3 != -1) {
-    calculateAngle(rssi1, rssi2, rssi3);
-  }
-  else if (rssi1 == -1 || rssi2 == -1 || rssi3 == -1) {
+  if (rssi1 == -1 || rssi2 == -1 || rssi3 == -1) {
     if (rssi1 == -1) Serial.println("NODE1 not responding");
     if (rssi2 == -1) Serial.println("NODE2 not responding");
     if (rssi3 == -1) Serial.println("NODE3 not responding");
+    return;
   }
 
   // Calculate target angle
@@ -210,8 +212,16 @@ void loop() {
   Serial.print(" | NODE3: "); Serial.print(rssi3);
   Serial.print(" | Target angle: "); Serial.println(targetAngle);
 
+  radio.powerDown();
+  delay(10); // let radio fully power down
+
   // Move stepper to target
   moveToAngle(targetAngle);
+
+  // Power radio back up
+  radio.powerUp();
+  delay(10); // let radio fully power up before next poll cycle
+
 
   // After polling both nodes they immediately start
   // their next 1 second count cycle
