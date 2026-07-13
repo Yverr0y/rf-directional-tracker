@@ -23,6 +23,22 @@ struct RSSIReport {
 };
 
 
+// Kalman filter variables 
+float kalmanEstimate = 1000;
+float kalmanError = 500;
+const float processNoise = 50; 
+const float measurementNoise = 300;
+
+float kalmanUpdate(float measurement, float &estimate, float &error) {
+  error += processNoise;
+  
+  float kalmanGain = error / (error + measurementNoise);
+  estimate = estimate + kalmanGain * (measurement - estimate);
+  error = (1 - kalmanGain) * error;
+  
+  return estimate;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -72,14 +88,22 @@ void loop() {
   }
 
   // Calculate smoothed RSSI
-  readings[readingIndex] = packetCount;
-  readingIndex = (readingIndex + 1) % smoothingWindow;
+ // readings[readingIndex] = packetCount;
+ // readingIndex = (readingIndex + 1) % smoothingWindow;
 
-  int sum = 0;
-  for (int i = 0; i < smoothingWindow; i++) {
-    sum += readings[i];
-  }
-  smoothedStrength = sum / smoothingWindow;
+ // int sum = 0;
+ // for (int i = 0; i < smoothingWindow; i++) {
+ //   sum += readings[i];
+ // }
+ // smoothedStrength = sum / smoothingWindow;
+  smoothedStrength = kalmanUpdate(packetCount, kalmanEstimate, kalmanError);
+
+  Serial.print("Actual Packet Count: ");
+  Serial.println(packetCount);
+  Serial.print("Kalman Estimate: ");
+  Serial.println(kalmanEstimate);
+  Serial.print("Kalman Error: ");
+  Serial.println(kalmanError);
 
   Serial.print("Count done - RSSI: ");
   Serial.println(smoothedStrength);
@@ -99,16 +123,16 @@ void loop() {
 
   // Wait forever until brain polls
   while (true) {
-    if (radio.available()) {
-      uint8_t request;
-      radio.read(&request, sizeof(request));
+   // if (radio.available()) {
+   //   uint8_t request;
+   //   radio.read(&request, sizeof(request));
 
-      if (request == (uint8_t)myNodeNum){
+   //   if (request == (uint8_t)myNodeNum){
 
-        Serial.println("Poll received - responding");
+   //     Serial.println("Poll received - responding");
 
         // In node handlePoll - before responding
-        delay(50); // 1ms settling time before transmitting response
+   //     delay(50); // 1ms settling time before transmitting response
 
         radio.stopListening();
         radio.openWritingPipe(reportAddress);
@@ -125,6 +149,6 @@ void loop() {
         break;
       }
         // keep waiting for correct poll 
-    }
-  }
+ //   }
+  //}
 }
