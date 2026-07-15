@@ -19,7 +19,7 @@ Motivated through operational EOD/military training/experience with RF use found
 - 3x Receiver Nodes: Arduino Nanos each w/ NRF24L01
 - Brain Node: ESP32 w/ NRF24L01 and 28BYJ-48 stepper motor
 
-- Transmission operate on 433MHz
+- Transmission operate on 2.4GHz
 - Transmitter set on ch100
 - Receiver nodes receive on ch100 and transmit to Brain Node on ch76 via token-activated polling
 
