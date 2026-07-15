@@ -23,6 +23,30 @@ struct RSSIReport {
 };
 
 
+// Kalman filter variables 
+float kalmanEstimate = 1000; // mid range of expected RSSI values
+float kalmanError = 100;
+const float processNoise = 50; // large for responsivesness when transmitter moves away
+const float measurementNoise = 5; // base level of noise when transmitter is close
+
+float kalmanUpdate(float measurement, float &estimate, float &error) {
+  error += processNoise;
+  
+  // normalize scale from 0 to 1 over 0 to ~2100 max packet count for RSSI
+  float normal = (2100.0f - estimate) / 2100.0f;
+  if (normal < 0.0f){
+    normal = 0.0f;
+  }
+  
+  // scales adaptive filter when transmitter moves away due to larger fluctuations
+  float dynamicMeasurementNoise = measurementNoise + (normal * normal * normal * normal);
+  float kalmanGain = error / (error + dynamicMeasurementNoise);
+  estimate = estimate + kalmanGain * (measurement - estimate);
+  error = (1 - kalmanGain) * error;
+  
+  return estimate;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -72,14 +96,22 @@ void loop() {
   }
 
   // Calculate smoothed RSSI
-  readings[readingIndex] = packetCount;
-  readingIndex = (readingIndex + 1) % smoothingWindow;
+ // readings[readingIndex] = packetCount;
+ // readingIndex = (readingIndex + 1) % smoothingWindow;
 
-  int sum = 0;
-  for (int i = 0; i < smoothingWindow; i++) {
-    sum += readings[i];
-  }
-  smoothedStrength = sum / smoothingWindow;
+ // int sum = 0;
+ // for (int i = 0; i < smoothingWindow; i++) {
+ //   sum += readings[i];
+ // }
+ // smoothedStrength = sum / smoothingWindow;
+  smoothedStrength = kalmanUpdate(packetCount, kalmanEstimate, kalmanError);
+
+ // Serial.print("Actual Packet Count: ");
+ // Serial.println(packetCount);
+ // Serial.print("Kalman Estimate: ");
+ // Serial.println(kalmanEstimate);
+ // Serial.print("Kalman Error: ");
+ // Serial.println(kalmanError);
 
   Serial.print("Count done - RSSI: ");
   Serial.println(smoothedStrength);

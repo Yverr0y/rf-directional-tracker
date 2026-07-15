@@ -16,7 +16,7 @@ int rssi2 = 0;
 int rssi3 = 0;
 
 const int STEPS_PER_REV = 2048; //360 degree roation
-Stepper stepper(STEPS_PER_REV, 13, 14, 12, 25); // (IN1, IN3, IN2, IN4)
+Stepper stepper(STEPS_PER_REV, 13, 12, 14, 25); // (IN1, IN3, IN2, IN4)
 int currentStepperAngle = 0; // degrees, 0-359
 const int angleThreshold = 3; // chnage in angle must exceed to move stepper
 
@@ -87,9 +87,26 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
   return -1;
 }
 
-// Calculate target angle from three RSSI values
+// Calculate target angle (Node1 0 degrees, Node2, 120 degrees, Node3 240 degrees)
 int calculateAngle(int r1, int r2, int r3) {
-  // Square values to amplify differential
+  
+  // doesn't change position if signal strength is too low
+  if (r1 < 100 && r2 < 100 && r3 < 100) {
+    Serial.println("Signal too weak, holding position");
+    return currentStepperAngle;
+  }
+
+  // doesn't change position if difference between RSSI is too small
+  int maxRSSI = max(r1, max(r2, r3));
+  int minRSSI = min(r1, min(r2, r3));
+  int spread = maxRSSI - minRSSI;
+
+  if (spread < 50) {
+    Serial.println("Low differential - holding position");
+    return currentStepperAngle;
+  }
+
+  // Square values
   long r1sq = (long)r1 * r1;
   long r2sq = (long)r2 * r2;
   long r3sq = (long)r3 * r3;
@@ -97,8 +114,6 @@ int calculateAngle(int r1, int r2, int r3) {
 
   if (total == 0) return currentStepperAngle;
 
-  // Node positions in equilateral triangle
-  // NODE1 at 0 degrees, NODE2 at 120 degrees, NODE3 at 240 degrees
   float x = 0;
   float y = 0;
 
@@ -110,10 +125,7 @@ int calculateAngle(int r1, int r2, int r3) {
   y += (float)r2sq * sin(120 * PI / 180.0);
   y += (float)r3sq * sin(240 * PI / 180.0);
 
-  // atan2 gives angle in radians -PI to PI
   float angleRad = atan2(y, x);
-
-  // Convert to degrees 0-359
   int angleDeg = (int)(angleRad * 180.0 / PI);
   if (angleDeg < 0) angleDeg += 360;
 
@@ -182,11 +194,11 @@ void loop() {
   Serial.println("Waiting for nodes to count...");
   delay(2200);
 
-  // Poll both nodes - they are guaranteed to be waiting
+  // Poll both nodes - they are guaranteed to be waiting due to delay
   Serial.println("Polling NODE1...");
   rssi1 = pollNode(pollNode1, reprt1, 1);
 
-  // Brief pause between polls
+  // pause between polls
   delay(10);
 
   Serial.println("Polling NODE2...");
@@ -204,7 +216,7 @@ void loop() {
     return;
   }
 
-  // Calculate target angle
+  // get target angle
   int targetAngle = calculateAngle(rssi1, rssi2, rssi3);
 
   Serial.print("NODE1: "); Serial.print(rssi1);
@@ -212,6 +224,7 @@ void loop() {
   Serial.print(" | NODE3: "); Serial.print(rssi3);
   Serial.print(" | Target angle: "); Serial.println(targetAngle);
 
+  // powering transceiver down allows ESP32 to give power to turn the stepper
   radio.powerDown();
   delay(10); // let radio fully power down
 
@@ -223,7 +236,5 @@ void loop() {
   delay(10); // let radio fully power up before next poll cycle
 
 
-  // After polling both nodes they immediately start
-  // their next 1 second count cycle
-  // Brain's next delay(2200) keeps them in sync
+  // After polling, both nodes start their nexs 1s count cycle, 2200ms delay keeps them in sync
 }

@@ -24,15 +24,23 @@ struct RSSIReport {
 
 
 // Kalman filter variables 
-float kalmanEstimate = 1000;
-float kalmanError = 500;
-const float processNoise = 50; 
-const float measurementNoise = 300;
+float kalmanEstimate = 1000; // mid range of expected RSSI values
+float kalmanError = 100;
+const float processNoise = 50; // large for responsivesness when transmitter moves away
+const float measurementNoise = 5; // base level of noise when transmitter is close
 
 float kalmanUpdate(float measurement, float &estimate, float &error) {
   error += processNoise;
   
-  float kalmanGain = error / (error + measurementNoise);
+  // normalize scale from 0 to 1 over 0 to ~2100 max packet count for RSSI
+  float normal = (2100.0f - estimate) / 2100.0f;
+  if (normal < 0.0f){
+    normal = 0.0f;
+  }
+  
+  // scales adaptive filter when transmitter moves away due to larger fluctuations
+  float dynamicMeasurementNoise = measurementNoise + (normal * normal * normal * normal);
+  float kalmanGain = error / (error + dynamicMeasurementNoise);
   estimate = estimate + kalmanGain * (measurement - estimate);
   error = (1 - kalmanGain) * error;
   
@@ -98,12 +106,12 @@ void loop() {
  // smoothedStrength = sum / smoothingWindow;
   smoothedStrength = kalmanUpdate(packetCount, kalmanEstimate, kalmanError);
 
-  Serial.print("Actual Packet Count: ");
-  Serial.println(packetCount);
-  Serial.print("Kalman Estimate: ");
-  Serial.println(kalmanEstimate);
-  Serial.print("Kalman Error: ");
-  Serial.println(kalmanError);
+ // Serial.print("Actual Packet Count: ");
+ // Serial.println(packetCount);
+ // Serial.print("Kalman Estimate: ");
+ // Serial.println(kalmanEstimate);
+ // Serial.print("Kalman Error: ");
+ // Serial.println(kalmanError);
 
   Serial.print("Count done - RSSI: ");
   Serial.println(smoothedStrength);
@@ -123,16 +131,16 @@ void loop() {
 
   // Wait forever until brain polls
   while (true) {
-   // if (radio.available()) {
-   //   uint8_t request;
-   //   radio.read(&request, sizeof(request));
+    if (radio.available()) {
+      uint8_t request;
+      radio.read(&request, sizeof(request));
 
-   //   if (request == (uint8_t)myNodeNum){
+      if (request == (uint8_t)myNodeNum){
 
-   //     Serial.println("Poll received - responding");
+        Serial.println("Poll received - responding");
 
         // In node handlePoll - before responding
-   //     delay(50); // 1ms settling time before transmitting response
+        delay(50); // 1ms settling time before transmitting response
 
         radio.stopListening();
         radio.openWritingPipe(reportAddress);
@@ -149,6 +157,6 @@ void loop() {
         break;
       }
         // keep waiting for correct poll 
- //   }
-  //}
+    }
+  }
 }
