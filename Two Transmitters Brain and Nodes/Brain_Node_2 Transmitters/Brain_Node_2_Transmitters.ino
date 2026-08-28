@@ -11,23 +11,26 @@ const byte reprt1[6] = "RPRT1";
 const byte reprt2[6] = "RPRT2";
 const byte reprt3[6] = "RPRT3";
 
-int rssi1 = 0;
-int rssi2 = 0;
-int rssi3 = 0;
+int rssi0[3] = {0, 0, 0};
+int rssi1[3] = {0, 0, 0};
 
 const int STEPS_PER_REV = 2048; //360 degree roation
 Stepper stepper(STEPS_PER_REV, 13, 12, 14, 25); // (IN1, IN3, IN2, IN4)
-int currentStepperAngle = 0; // degrees, 0-359
-const int angleThreshold = 3; // chnage in angle must exceed to move stepper
+int currentStepperAngle = 0; // degrees, 0-359 - TODO: needs to become per-target
+// if you want both bearings physically indicated; see note at bottom
+const int angleThreshold = 3; // change in angle must exceed to move stepper
 
 struct RSSIReport {
   uint16_t nodeNum;
-  uint16_t rssi;
+  uint16_t rssi0;
+  uint16_t rssi1;
 };
 
-int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNode) {
-  
-  // Flush any noise before starting to remove garbage
+// single poll call gets both targets' data at once
+bool pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNode,
+              int &outRssi0, int &outRssi1) {
+
+   // Flush any noise before starting to remove garbage
   radio.flush_rx();
 
   // Listen for response first
@@ -66,11 +69,15 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
         // Verify this packet came from the expected node
         // sometimes NRF24L01's receive packets address to similar addresses (one char off)
         if (report.nodeNum == expectedNode) {
-        Serial.print("NODE");
-        Serial.print(report.nodeNum);
-        Serial.print(" RSSI: ");
-        Serial.println(report.rssi);
-        return report.rssi;
+          Serial.print("NODE");
+          Serial.print(report.nodeNum);
+          Serial.print(" RSSI0: ");
+          Serial.print(report.rssi0);
+          Serial.print(" RSSI1: ");
+          Serial.println(report.rssi1);
+          outRssi0 = report.rssi0;
+          outRssi1 = report.rssi1;
+          return true;
         }
         else{
           // Wrong node, discard and keep waiting
@@ -84,7 +91,7 @@ int pollNode(const byte* pollAddress, const byte* reportAddress, int expectedNod
   }
 
   Serial.println("Timeout after 2 seconds");
-  return -1;
+  return false;
 }
 
 // Calculate target angle (Node1 0 degrees, Node2, 120 degrees, Node3 240 degrees)
@@ -194,47 +201,47 @@ void loop() {
   Serial.println("Waiting for nodes to count...");
   delay(2200);
 
-  // Poll both nodes - they are guaranteed to be waiting due to delay
   Serial.println("Polling NODE1...");
-  rssi1 = pollNode(pollNode1, reprt1, 1);
-
+  bool ok1 = pollNode(pollNode1, reprt1, 1, rssi0[0], rssi1[0]);
+  
   // pause between polls
   delay(10);
 
   Serial.println("Polling NODE2...");
-  rssi2 = pollNode(pollNode2, reprt2, 2);
+  bool ok2 = pollNode(pollNode2, reprt2, 2, rssi0[1], rssi1[1]);
 
   delay(10);
 
   Serial.println("Polling NODE3...");
-  rssi3 = pollNode(pollNode3, reprt3, 3);
+  bool ok3 = pollNode(pollNode3, reprt3, 3, rssi0[2], rssi1[2]);
 
-  if (rssi1 == -1 || rssi2 == -1 || rssi3 == -1) {
-    if (rssi1 == -1) Serial.println("NODE1 not responding");
-    if (rssi2 == -1) Serial.println("NODE2 not responding");
-    if (rssi3 == -1) Serial.println("NODE3 not responding");
+  if (!ok1 || !ok2 || !ok3) {
+    if (!ok1) Serial.println("NODE1 not responding");
+    if (!ok2) Serial.println("NODE2 not responding");
+    if (!ok3) Serial.println("NODE3 not responding");
     return;
   }
 
-  // get target angle
-  int targetAngle = calculateAngle(rssi1, rssi2, rssi3);
+  // Compute bearing to each target independently
+  int targetAngle0 = calculateAngle(rssi0[0], rssi0[1], rssi0[2], currentStepperAngle);
+  int targetAngle1 = calculateAngle(rssi1[0], rssi1[1], rssi1[2], currentStepperAngle);
 
-  Serial.print("NODE1: "); Serial.print(rssi1);
-  Serial.print(" | NODE2: "); Serial.print(rssi2);
-  Serial.print(" | NODE3: "); Serial.print(rssi3);
-  Serial.print(" | Target angle: "); Serial.println(targetAngle);
+  Serial.print("TX0 -> N1: "); Serial.print(rssi0[0]);
+  Serial.print(" | N2: "); Serial.print(rssi0[1]);
+  Serial.print(" | N3: "); Serial.print(rssi0[2]);
+  Serial.print(" | Angle: "); Serial.println(targetAngle0);
 
-  // powering transceiver down allows ESP32 to give power to turn the stepper
+  Serial.print("TX1 -> N1: "); Serial.print(rssi1[0]);
+  Serial.print(" | N2: "); Serial.print(rssi1[1]);
+  Serial.print(" | N3: "); Serial.print(rssi1[2]);
+  Serial.print(" | Angle: "); Serial.println(targetAngle1);
+
+  // Stepper Code removed
   radio.powerDown();
-  delay(10); // let radio fully power down
+  delay(10);
 
-  // Move stepper to target
-  moveToAngle(targetAngle);
+  moveToAngle(targetAngle0);
 
-  // Power radio back up
   radio.powerUp();
-  delay(10); // let radio fully power up before next poll cycle
-
-
-  // After polling, both nodes start their nexs 1s count cycle, 2200ms delay keeps them in sync
+  delay(10);
 }
